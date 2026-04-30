@@ -1,0 +1,13 @@
+{
+  "name": "@plot-money/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'sveltekit dev — scaffold added in Phase 3'",
+    "build": "echo 'sveltekit build — scaffold added in Phase 3'",
+    "typecheck": "echo 'svelte-check — scaffold added in Phase 3'",
+    "lint": "echo 'lint TBD'",
+    "test": "echo 'no tests yet'"
+  }
+}

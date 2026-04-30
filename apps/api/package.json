@@ -1,0 +1,14 @@
+{
+  "name": "@plot-money/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "echo 'no build step yet'",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint TBD'",
+    "test": "bun test"
+  }
+}
