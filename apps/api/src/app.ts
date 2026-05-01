@@ -10,6 +10,7 @@ import { errorHandler } from './middleware/error.ts';
 import { requireAuth } from './middleware/auth.ts';
 import { requireActiveSubscription } from './middleware/subscription.ts';
 import { healthRoute } from './routes/health.ts';
+import { handleMcpRequest } from './mcp/route.ts';
 import type { AppEnv } from './types.ts';
 
 export function createApp(): Hono<AppEnv> {
@@ -41,12 +42,10 @@ export function createApp(): Hono<AppEnv> {
     }),
   );
 
-  // MCP requires both auth AND an active subscription.
-  app.use('/mcp/*', requireAuth(), requireActiveSubscription());
-  app.post('/mcp', requireAuth(), requireActiveSubscription(), (c) => {
-    // Real MCP handler lands in Phase 4.
-    return c.json({ ok: true, note: 'MCP transport not wired yet (Phase 4)' });
-  });
+  // MCP requires both auth AND an active subscription. The transport speaks
+  // Web Standard Request/Response so we hand `c.req.raw` straight to it.
+  app.use('/mcp', requireAuth(), requireActiveSubscription());
+  app.all('/mcp', handleMcpRequest);
 
   return app;
 }

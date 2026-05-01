@@ -99,13 +99,27 @@ describe('subscription gate on /mcp', () => {
     expect(body.code).toBe('SUBSCRIPTION_INACTIVE');
   });
 
-  test('accepts authenticated user with active subscription', async () => {
+  test('accepts authenticated user with active subscription (initialize handshake)', async () => {
     const res = await app.request('/mcp', {
       method: 'POST',
-      headers: bearer(fixtures.aliceToken),
+      headers: {
+        ...bearer(fixtures.aliceToken),
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '0' },
+        },
+      }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean };
-    expect(body.ok).toBe(true);
+    const body = (await res.json()) as { result: { serverInfo: { name: string } } };
+    expect(body.result.serverInfo.name).toBe('plot.money');
   });
 });
