@@ -10,6 +10,25 @@
   let copyState = $state<'idle' | 'copied'>('idle');
   let revokingId = $state<string | null>(null);
   let errorMsg = $state<string | null>(null);
+  let subscribing = $state(false);
+  let subscribeError = $state<string | null>(null);
+
+  async function subscribe() {
+    subscribing = true;
+    subscribeError = null;
+    try {
+      const res = await fetch('/api/subscription/activate', { method: 'POST' });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        throw new Error(err.error ?? `Failed (${res.status})`);
+      }
+      await invalidateAll();
+    } catch (err) {
+      subscribeError = err instanceof Error ? err.message : 'Failed to subscribe';
+    } finally {
+      subscribing = false;
+    }
+  }
 
   function openGenerate() {
     newName = '';
@@ -120,14 +139,18 @@
 
   {#if !data.subscriptionActive}
     <button
-      class="rounded-lg bg-white px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200"
-      disabled
+      onclick={subscribe}
+      disabled={subscribing}
+      class="rounded-lg bg-white px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 disabled:opacity-60"
     >
-      Subscribe — coming in Phase 5
+      {subscribing ? 'Activating…' : 'Subscribe — ₹299/month'}
     </button>
     <p class="mt-3 text-xs text-neutral-500">
-      Razorpay test-mode integration is not wired yet — until then, ask Somu for a dev sub.
+      v0.1: subscribes instantly without payment. Razorpay billing is wired in a later release.
     </p>
+    {#if subscribeError}
+      <p class="mt-2 text-xs text-red-400">{subscribeError}</p>
+    {/if}
   {/if}
 </section>
 
