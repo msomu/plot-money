@@ -14,18 +14,28 @@ import { and, eq, isNull, sql as rawSql } from 'drizzle-orm';
 import { AppError, schema, withOwner } from '@plot-money/shared';
 import { hashToken, looksLikeToken } from '../lib/tokens.ts';
 import { loadEnv } from '../env.ts';
+import { getAuth } from '../auth.ts';
 import type { AppEnv } from '../types.ts';
 
 export function requireAuth(): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const env = loadEnv();
 
-    // Session path is stubbed for now — Better Auth lands in Phase 3.
-    // When it does, look up the session cookie here and set userId/authMethod.
+    // Path 1: Better Auth session cookie. Cheap if no cookie is present —
+    // getSession returns null without a DB hit when there's nothing to look up.
+    if (c.req.header('Cookie')) {
+      const session = await getAuth().api.getSession({ headers: c.req.raw.headers });
+      if (session) {
+        c.set('userId', session.user.id);
+        c.set('authMethod', 'session');
+        return next();
+      }
+    }
 
+    // Path 2: Bearer token (the MCP path).
     const header = c.req.header('Authorization') ?? '';
     if (!header.startsWith('Bearer ')) {
-      throw new AppError('UNAUTHORIZED', 'Missing Authorization: Bearer <token>');
+      throw new AppError('UNAUTHORIZED', 'Missing session cookie or Authorization: Bearer <token>');
     }
 
     const raw = header.slice('Bearer '.length).trim();

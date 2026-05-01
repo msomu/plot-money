@@ -44,6 +44,28 @@ describe('GET /health', () => {
   });
 });
 
+describe('Better Auth routes', () => {
+  test('GET /api/auth/get-session returns null when no cookie is sent', async () => {
+    const res = await app.request('/api/auth/get-session');
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toBe('null');
+  });
+
+  test('POST /api/auth/sign-in/social returns 404 when Google is not configured', async () => {
+    // In tests we don't set GOOGLE_CLIENT_ID — Better Auth should report
+    // PROVIDER_NOT_FOUND rather than trying to redirect.
+    const res = await app.request('/api/auth/sign-in/social', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'google', callbackURL: 'http://localhost:5173/app' }),
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('PROVIDER_NOT_FOUND');
+  });
+});
+
 describe('auth on /api/me', () => {
   test('rejects request with no Authorization header', async () => {
     const res = await app.request('/api/me');

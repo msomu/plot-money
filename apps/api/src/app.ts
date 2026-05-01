@@ -11,6 +11,7 @@ import { requireAuth } from './middleware/auth.ts';
 import { requireActiveSubscription } from './middleware/subscription.ts';
 import { healthRoute } from './routes/health.ts';
 import { handleMcpRequest } from './mcp/route.ts';
+import { getAuth } from './auth.ts';
 import type { AppEnv } from './types.ts';
 
 export function createApp(): Hono<AppEnv> {
@@ -31,6 +32,12 @@ export function createApp(): Hono<AppEnv> {
 
   // Public routes.
   app.route('/', healthRoute);
+
+  // Better Auth handler — owns every /api/auth/* endpoint (sign-in, callbacks,
+  // session, sign-out). Mounted BEFORE the requireAuth middleware so the
+  // public auth endpoints stay accessible.
+  const auth = getAuth();
+  app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
   // Authenticated REST API. More routes added in later phases.
   app.use('/api/*', requireAuth());

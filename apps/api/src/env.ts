@@ -17,6 +17,19 @@ const EnvSchema = z.object({
   // Salt for HMAC-hashing MCP bearer tokens. Generate with `openssl rand -hex 32`.
   // Must be stable — rotating it invalidates all existing tokens.
   APP_SECRET: z.string().min(32, 'APP_SECRET must be at least 32 chars'),
+
+  // Better Auth — secret signs sessions/cookies. Stable across the deployment.
+  BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 chars'),
+
+  // Optional in dev — if absent, Google sign-in is simply not registered.
+  GOOGLE_CLIENT_ID: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
+  GOOGLE_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
 });
 
 export type Env = z.infer<typeof EnvSchema> & { ALLOWED_ORIGINS_LIST: string[] };
