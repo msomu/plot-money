@@ -10,6 +10,8 @@ import { errorHandler } from './middleware/error.ts';
 import { requireAuth } from './middleware/auth.ts';
 import { requireActiveSubscription } from './middleware/subscription.ts';
 import { healthRoute } from './routes/health.ts';
+import { tokensRoute } from './routes/tokens.ts';
+import { subscriptionRoute } from './routes/subscription.ts';
 import { handleMcpRequest } from './mcp/route.ts';
 import { getAuth } from './auth.ts';
 import type { AppEnv } from './types.ts';
@@ -48,6 +50,8 @@ export function createApp(): Hono<AppEnv> {
       tokenId: c.get('tokenId') ?? null,
     }),
   );
+  app.route('/', tokensRoute);
+  app.route('/', subscriptionRoute);
 
   // MCP requires both auth AND an active subscription. The transport speaks
   // Web Standard Request/Response so we hand `c.req.raw` straight to it.

@@ -9,7 +9,8 @@
     "build": "echo 'no build step yet'",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint TBD'",
-    "test": "bun test"
+    "test": "bun test",
+    "dev:activate-sub": "bun scripts/activate-dev-sub.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
