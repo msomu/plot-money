@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+/* Base typography + bg lock for the dark hero. */
+:root {
+  color-scheme: dark;
+  font-family:
+    'Inter',
+    'SF Pro Text',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-feature-settings: 'cv11';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-image: radial-gradient(
+    ellipse 80% 60% at 50% -20%,
+    rgba(120, 119, 198, 0.15),
+    transparent
+  );
+}
+
+/* The hero gradient text — used in the landing page hero. */
+.gradient-text {
+  background: linear-gradient(135deg, #fff 0%, #a78bfa 50%, #f472b6 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
