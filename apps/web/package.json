@@ -10,7 +10,9 @@
     "prepare": "bun --bun ./node_modules/.bin/svelte-kit sync",
     "typecheck": "bun --bun ./node_modules/.bin/svelte-kit sync && bun --bun ./node_modules/.bin/svelte-check --tsconfig ./tsconfig.json",
     "lint": "echo 'lint TBD'",
-    "test": "echo 'no tests yet'"
+    "test": "echo 'no tests yet'",
+    "deploy": "bun run build && ./node_modules/.bin/wrangler deploy --env production",
+    "deploy:preview": "bun run build && ./node_modules/.bin/wrangler deploy --env preview"
   },
   "dependencies": {
     "@plot-money/shared": "workspace:*",
@@ -27,6 +29,7 @@
     "@types/bun": "^1.3.13",
     "@types/node": "^25.6.0",
     "svelte-check": "^4.4.7",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "wrangler": "^4.88.0"
   }
 }

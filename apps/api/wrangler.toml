@@ -3,10 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-04-30"
 compatibility_flags = ["nodejs_compat"]
 
-# Web server tuning. Workers default to 30s wall, 50s CPU on paid plans.
-# We don't set route patterns here — wrangler deploy uses these defaults
-# and we'll attach api.plot.money via the Cloudflare dashboard / dns.
-
 [observability]
 enabled = true
 
@@ -24,7 +20,7 @@ port = 3000
 [[d1_databases]]
 binding = "DB"
 database_name = "plot-money"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "1cfdf75e-991d-42e5-8b3c-61892915c2a2"
 migrations_dir = "../../packages/shared/migrations"
 
 # ---------------------------------------------------------------------------
@@ -46,11 +42,68 @@ APP_URL = "http://localhost:3000"
 WEB_URL = "http://localhost:5173"
 ALLOWED_ORIGINS = "http://localhost:5173"
 
+# ---------------------------------------------------------------------------
+# Production: served from path prefixes on the apex `plot.money` zone. The
+# web Worker (apps/web) owns the catch-all `/*` route on the same zone, so
+# Cloudflare's most-specific-match rule sends /api/*, /mcp, /health here
+# and everything else to web. Single origin → no CORS / cookie-domain dance.
+# ---------------------------------------------------------------------------
 [env.production]
 name = "plot-money-api"
+routes = [
+  { pattern = "plot.money/api/*", zone_name = "plot.money" },
+  { pattern = "plot.money/mcp", zone_name = "plot.money" },
+  { pattern = "plot.money/health", zone_name = "plot.money" },
+]
 
 [env.production.vars]
 NODE_ENV = "production"
-APP_URL = "https://api.plot.money"
-WEB_URL = "https://app.plot.money"
-ALLOWED_ORIGINS = "https://app.plot.money,https://plot.money"
+APP_URL = "https://plot.money"
+WEB_URL = "https://plot.money"
+ALLOWED_ORIGINS = "https://plot.money"
+
+# wrangler's `[env.X]` sections REPLACE top-level bindings rather than
+# extending them, so D1 + R2 have to be repeated.
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "plot-money"
+database_id = "1cfdf75e-991d-42e5-8b3c-61892915c2a2"
+migrations_dir = "../../packages/shared/migrations"
+
+[[env.production.r2_buckets]]
+binding = "FILES"
+bucket_name = "plot-money-files"
+
+[env.production.observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Preview: same code, attached to p.plot.money. Shares prod D1/R2 — preview
+# is for landing-page review, not a separate dataset.
+# ---------------------------------------------------------------------------
+[env.preview]
+name = "plot-money-api-preview"
+routes = [
+  { pattern = "p.plot.money/api/*", zone_name = "plot.money" },
+  { pattern = "p.plot.money/mcp", zone_name = "plot.money" },
+  { pattern = "p.plot.money/health", zone_name = "plot.money" },
+]
+
+[env.preview.vars]
+NODE_ENV = "production"
+APP_URL = "https://p.plot.money"
+WEB_URL = "https://p.plot.money"
+ALLOWED_ORIGINS = "https://p.plot.money"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "plot-money"
+database_id = "1cfdf75e-991d-42e5-8b3c-61892915c2a2"
+migrations_dir = "../../packages/shared/migrations"
+
+[[env.preview.r2_buckets]]
+binding = "FILES"
+bucket_name = "plot-money-files"
+
+[env.preview.observability]
+enabled = true

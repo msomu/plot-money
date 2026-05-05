@@ -1,0 +1,31 @@
+name = "plot-money-web"
+compatibility_date = "2026-04-30"
+compatibility_flags = ["nodejs_compat"]
+main = ".svelte-kit/cloudflare/_worker.js"
+assets = { directory = ".svelte-kit/cloudflare", binding = "ASSETS" }
+
+[observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Production: catch-all on plot.money. The api Worker takes more-specific
+# /api/*, /mcp, /health routes; everything else (landing, /app dashboard,
+# static assets) lands here.
+# ---------------------------------------------------------------------------
+[env.production]
+name = "plot-money-web"
+routes = [{ pattern = "plot.money/*", zone_name = "plot.money" }]
+
+[env.production.observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Preview: served at p.plot.money. Talks to the matching preview API on
+# the same hostname (relative URLs — same origin).
+# ---------------------------------------------------------------------------
+[env.preview]
+name = "plot-money-web-preview"
+routes = [{ pattern = "p.plot.money/*", zone_name = "plot.money" }]
+
+[env.preview.observability]
+enabled = true

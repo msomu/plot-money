@@ -53,6 +53,9 @@ export function getAuth(bindings: Bindings): AuthInstance {
     }),
     socialProviders,
     advanced: {
+      // Single-origin deployment: api + web both live under plot.money via
+      // path-based Workers Routes, so the cookie's default scope (the
+      // request host) is exactly what we want — no domain override needed.
       defaultCookieAttributes: {
         sameSite: 'lax',
         secure: env.NODE_ENV === 'production',

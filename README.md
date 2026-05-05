@@ -26,23 +26,28 @@ Built for Indian users (INR-first, GST-aware, UPI/SIP/MF categories baked in). E
 
 ```
 ┌──────────────────────┐        ┌──────────────────────┐
-│  Claude Desktop /    │        │  Web (SvelteKit)     │
-│  ChatGPT / Cursor    │        │  Cloudflare Workers  │
-│  (MCP client)        │        │  app.plot.money      │
+│  Claude Desktop /    │        │  Browser             │
+│  ChatGPT / Cursor    │        │                      │
+│  (MCP client)        │        │  https://plot.money  │
 └──────────┬───────────┘        └──────────┬───────────┘
-           │ Bearer token                  │ Session cookie
-           │ (streamable HTTP)             │ (Better Auth)
+           │                               │
+           │  https://plot.money/mcp       │  https://plot.money/*
+           │  (Bearer token)               │  (Session cookie)
            ▼                               ▼
-        ┌──────────────────────────────────────┐
-        │  API + MCP server (Hono on Workers)   │
-        │  Cloudflare · api.plot.money          │
-        └────────────────────┬──────────────────┘
-                             │ via D1 binding
-                             ▼
-                  ┌─────────────────────┐
-                  │  D1 (SQLite at edge)│
-                  └─────────────────────┘
+   ┌────────────────────────────────────────────────────────┐
+   │  Cloudflare zone: plot.money                           │
+   │  ─────────────────────────────────────────────────     │
+   │  /mcp, /api/*, /health     → API Worker (Hono)         │
+   │  /, /app, /_app/*, ...     → Web Worker (SvelteKit)    │
+   └─────────────────────────────────┬──────────────────────┘
+                                     │ via D1 binding
+                                     ▼
+                          ┌─────────────────────┐
+                          │  D1 (SQLite at edge)│
+                          └─────────────────────┘
 ```
+
+**Single origin.** Both Workers serve from `plot.money` via path-based routing — no cross-subdomain auth ceremony, no CORS, one cookie scope. From a user's perspective, plot.money is plot.money.
 
 **Tenant isolation** is enforced at the application layer via a `tenant(userId)` predicate that's required on every read/write of user-scoped tables. See [`packages/shared/src/db.ts`](./packages/shared/src/db.ts).
 
