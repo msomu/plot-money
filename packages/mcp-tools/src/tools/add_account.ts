@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { ACCOUNT_TYPES, schema, withRls } from '@plot-money/shared';
-import { formatAmount, parseAmount } from '../_helpers.ts';
+import { ACCOUNT_TYPES, schema } from '@plot-money/shared';
+import { fromPaise, toPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 const inputSchema = {
@@ -28,27 +28,25 @@ const tool: ToolDef<Input, Output> = {
   name: 'add_account',
   title: 'Add account',
   description:
-    'Create a new financial account (savings, credit card, mutual fund, etc.). The starting_balance is the opening balance — subsequent transactions adjust it.',
+    'Create a new financial account (savings, credit card, mutual fund, etc.). The starting_balance is the opening balance in rupees — subsequent transactions adjust it.',
   inputSchema,
   async handler(input, ctx) {
-    const created = await withRls(ctx.userId, async (tx) => {
-      const rows = await tx
-        .insert(schema.accounts)
-        .values({
-          userId: ctx.userId,
-          name: input.name,
-          type: input.type,
-          balance: formatAmount(input.starting_balance),
-        })
-        .returning();
-      return rows[0]!;
-    });
+    const [created] = await ctx.db
+      .insert(schema.accounts)
+      .values({
+        userId: ctx.userId,
+        name: input.name,
+        type: input.type,
+        balancePaise: toPaise(input.starting_balance),
+      })
+      .returning();
+    if (!created) throw new Error('add_account: insert returned no rows');
     return {
       id: created.id,
       name: created.name,
       type: created.type,
       currency: created.currency,
-      balance: parseAmount(created.balance),
+      balance: fromPaise(created.balancePaise),
       created_at: created.createdAt.toISOString(),
     };
   },

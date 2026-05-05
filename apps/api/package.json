@@ -4,13 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
-    "build": "echo 'no build step yet'",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy --env production",
+    "build": "wrangler deploy --env production --dry-run --outdir=dist",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint TBD'",
     "test": "bun test",
-    "dev:activate-sub": "bun scripts/activate-dev-sub.ts"
+    "db:migrate:local": "wrangler d1 migrations apply plot-money --local",
+    "db:migrate:remote": "wrangler d1 migrations apply plot-money --remote",
+    "secrets:put": "wrangler secret put"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -19,7 +21,11 @@
     "better-auth": "^1.6.9",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.16",
-    "postgres": "^3.4.9",
     "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260505.1",
+    "miniflare": "^4.20260504.0",
+    "wrangler": "^4.88.0"
   }
 }

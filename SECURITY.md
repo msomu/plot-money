@@ -40,8 +40,8 @@ Out of scope (please don't report these):
 
 These are intentional, not vulnerabilities:
 
-- MCP bearer tokens are shown to the user **once** at generation time. We store only the hash. If lost, generate a new one.
-- Tenant isolation is enforced at the **Postgres RLS** layer with a non-superuser app role. Application bugs that forget to set `app.current_user_id` will fail closed (RLS denies access).
+- MCP bearer tokens are shown to the user **once** at generation time. We store only the HMAC-SHA256 hash keyed by `APP_SECRET`. If lost, generate a new one.
+- Tenant isolation is enforced at the **application layer** via the `tenant(userId)` predicate in `packages/shared/src/db.ts`. Every query into user-scoped tables (`accounts`, `transactions`, `mcp_tokens`, `subscriptions`) MUST include `t.<table>` in its `WHERE`. Code review and integration tests are the floor here — bugs in this layer that omit the predicate would leak data across users.
 - Razorpay handles all card data — we never see, store, or transmit card numbers.
 
 ## Self-hosters
@@ -49,9 +49,10 @@ These are intentional, not vulnerabilities:
 If you self-host, you are responsible for:
 
 - Generating strong values for `APP_SECRET` and `BETTER_AUTH_SECRET` (`openssl rand -hex 32`)
-- Using a Postgres connection role that does **not** bypass RLS (i.e., not the database owner / superuser)
-- Keeping `.env` files out of version control
-- TLS termination on your API and web endpoints
+- Storing them as Cloudflare Worker secrets (`wrangler secret put`), never in source
+- Keeping `.env.local` out of version control (it's in `.gitignore` already; double-check before committing)
+- Restricting your Cloudflare API tokens to least privilege (D1 + Workers + R2 only — not your account-wide token)
+- TLS is automatic on Cloudflare; just don't disable it
 
 ## Acknowledgements
 

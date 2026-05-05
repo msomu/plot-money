@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { eq, sql as rawSql } from 'drizzle-orm';
-import { AppError, CATEGORIES, TRANSACTION_TYPES, schema, withRls } from '@plot-money/shared';
-import { formatAmount, parseAmount, parseTransactionDate } from '../_helpers.ts';
+import { and, eq, sql as rawSql } from 'drizzle-orm';
+import { AppError, CATEGORIES, TRANSACTION_TYPES, schema, tenant } from '@plot-money/shared';
+import { parseRupeeAmount, parseTransactionDate } from '../_helpers.ts';
+import { fromPaise, toPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 const inputSchema = {
@@ -40,62 +41,64 @@ const tool: ToolDef<Input, Output> = {
   name: 'add_transaction',
   title: 'Add transaction',
   description:
-    'Log a transaction (debit or credit). Updates the account balance atomically. Amount must be positive — direction is set by `type`.',
+    'Log a transaction (debit or credit). Updates the account balance atomically. Amount must be positive in rupees — direction is set by `type`.',
   inputSchema,
   async handler(input, ctx) {
-    const date = parseTransactionDate(input.transaction_date);
-    const delta = input.type === 'credit' ? input.amount : -input.amount;
-    const amountStr = formatAmount(input.amount);
+    const t = tenant(ctx.userId);
+    const db = ctx.db;
+    const dateStr = parseTransactionDate(input.transaction_date);
+    const amount = parseRupeeAmount(input.amount);
+    const amountPaise = toPaise(amount);
+    const deltaPaise = input.type === 'credit' ? amountPaise : -amountPaise;
 
-    return await withRls(ctx.userId, async (tx) => {
-      // Ensure the account exists for this user (RLS already restricts the
-      // update; we want a friendly NOT_FOUND if it doesn't).
-      const accountRows = await tx
-        .select({ id: schema.accounts.id })
-        .from(schema.accounts)
-        .where(eq(schema.accounts.id, input.account_id))
-        .limit(1);
-      if (accountRows.length === 0) {
-        throw new AppError('NOT_FOUND', `Account not found: ${input.account_id}`);
-      }
+    // Ensure the account exists for this user (tenant predicate scopes the
+    // lookup; raise a friendly NOT_FOUND when missing).
+    const [account] = await db
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .where(and(t.accounts, eq(schema.accounts.id, input.account_id)))
+      .limit(1);
+    if (!account) {
+      throw new AppError('NOT_FOUND', `Account not found: ${input.account_id}`);
+    }
 
-      const inserted = await tx
-        .insert(schema.transactions)
-        .values({
-          userId: ctx.userId,
-          accountId: input.account_id,
-          amount: amountStr,
-          type: input.type,
-          category: input.category,
-          description: input.description,
-          transactionDate: date,
-        })
-        .returning();
+    const [inserted] = await db
+      .insert(schema.transactions)
+      .values({
+        userId: ctx.userId,
+        accountId: input.account_id,
+        amountPaise,
+        type: input.type,
+        category: input.category,
+        description: input.description,
+        transactionDate: dateStr,
+      })
+      .returning();
+    if (!inserted) throw new Error('add_transaction: insert returned no rows');
 
-      const updated = await tx
-        .update(schema.accounts)
-        .set({
-          balance: rawSql`${schema.accounts.balance} + ${delta}`,
-          updatedAt: rawSql`now()`,
-        })
-        .where(eq(schema.accounts.id, input.account_id))
-        .returning({ balance: schema.accounts.balance });
+    const [updatedAccount] = await db
+      .update(schema.accounts)
+      .set({
+        balancePaise: rawSql`${schema.accounts.balancePaise} + ${deltaPaise}`,
+        updatedAt: new Date(),
+      })
+      .where(and(t.accounts, eq(schema.accounts.id, input.account_id)))
+      .returning({ balancePaise: schema.accounts.balancePaise });
+    if (!updatedAccount) throw new Error('add_transaction: balance update returned no rows');
 
-      const t = inserted[0]!;
-      return {
-        transaction: {
-          id: t.id,
-          account_id: t.accountId,
-          amount: parseAmount(t.amount),
-          type: t.type,
-          category: t.category,
-          description: t.description,
-          transaction_date: input.transaction_date,
-          created_at: t.createdAt.toISOString(),
-        },
-        account_balance_after: parseAmount(updated[0]!.balance),
-      };
-    });
+    return {
+      transaction: {
+        id: inserted.id,
+        account_id: inserted.accountId,
+        amount: fromPaise(inserted.amountPaise),
+        type: inserted.type,
+        category: inserted.category,
+        description: inserted.description,
+        transaction_date: inserted.transactionDate,
+        created_at: inserted.createdAt.toISOString(),
+      },
+      account_balance_after: fromPaise(updatedAccount.balancePaise),
+    };
   },
 };
 

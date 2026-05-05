@@ -1,0 +1,56 @@
+name = "plot-money-api"
+main = "src/index.ts"
+compatibility_date = "2026-04-30"
+compatibility_flags = ["nodejs_compat"]
+
+# Web server tuning. Workers default to 30s wall, 50s CPU on paid plans.
+# We don't set route patterns here — wrangler deploy uses these defaults
+# and we'll attach api.plot.money via the Cloudflare dashboard / dns.
+
+[observability]
+enabled = true
+
+# Local-dev server port. Matches the Google OAuth redirect that's already
+# registered in the Cloud Console (http://localhost:3000/...).
+[dev]
+port = 3000
+
+# ---------------------------------------------------------------------------
+# D1 — SQLite at the edge. Tenant data + Better Auth session/user tables.
+# ---------------------------------------------------------------------------
+# `database_id` gets filled in after `wrangler d1 create plot-money` (one-time
+# setup, see CONTRIBUTING). For local dev `wrangler dev --local` uses a
+# miniflare-backed SQLite file under .wrangler/ and ignores the id.
+[[d1_databases]]
+binding = "DB"
+database_name = "plot-money"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/shared/migrations"
+
+# ---------------------------------------------------------------------------
+# R2 — object storage. Reserved for v0.2 features (CSV exports, receipt
+# attachments). Empty binding now so the slot exists in production.
+# ---------------------------------------------------------------------------
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "plot-money-files"
+preview_bucket_name = "plot-money-files-preview"
+
+# ---------------------------------------------------------------------------
+# Public env. Secrets (APP_SECRET, BETTER_AUTH_SECRET, GOOGLE_*) are set via
+# `wrangler secret put <NAME>` and live encrypted in CF — never committed.
+# ---------------------------------------------------------------------------
+[vars]
+NODE_ENV = "development"
+APP_URL = "http://localhost:3000"
+WEB_URL = "http://localhost:5173"
+ALLOWED_ORIGINS = "http://localhost:5173"
+
+[env.production]
+name = "plot-money-api"
+
+[env.production.vars]
+NODE_ENV = "production"
+APP_URL = "https://api.plot.money"
+WEB_URL = "https://app.plot.money"
+ALLOWED_ORIGINS = "https://app.plot.money,https://plot.money"

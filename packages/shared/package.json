@@ -10,24 +10,20 @@
     "./schema": "./src/schema/index.ts",
     "./categories": "./src/categories.ts",
     "./errors": "./src/errors.ts",
-    "./db": "./src/db.ts",
-    "./test-fixtures": "./scripts/seed-test.ts"
+    "./db": "./src/db.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint TBD'",
-    "test": "bun test",
+    "test": "echo 'no tests at this layer in v0.1'",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run scripts/migrate.ts",
-    "db:seed": "bun run scripts/seed-test.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.9"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@types/pg": "^8.20.0",
+    "@cloudflare/workers-types": "^4.20260505.1",
     "drizzle-kit": "^0.31.10"
   }
 }

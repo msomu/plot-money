@@ -13,23 +13,26 @@ Thanks for considering a contribution. plot.money is in pre-alpha, so expect rap
 Requirements:
 
 - [Bun](https://bun.sh) ≥ 1.3.0
-- A Postgres database (free tier on [Neon](https://neon.tech) is enough)
-- Google OAuth client (for auth flow testing)
+- [Node](https://nodejs.org/) ≥ 20 (only because `wrangler` refuses to run under Bun's runtime)
+- Google OAuth client (for auth flow testing — http://localhost:3000/api/auth/callback/google)
 
 ```bash
 git clone https://github.com/msomu/plot-money.git
 cd plot-money
 bun install
-cp .env.example apps/api/.env.local   # fill in real values
-cp .env.example apps/web/.env.local
+cp .env.example apps/api/.env.local   # fill in BETTER_AUTH_SECRET, APP_SECRET, GOOGLE_*
+bun run --filter @plot-money/api db:migrate:local   # creates the local D1 file
 ```
 
 ## Running locally
 
 ```bash
-bun run --filter @plot-money/api dev
-bun run --filter @plot-money/web dev
+bun run --filter @plot-money/api dev   # wrangler dev on :3000
+bun run --filter @plot-money/web dev   # vite on :5173 (proxies /api, /mcp, /health to :3000)
 ```
+
+The web app expects the API on the same origin in dev — Vite proxies the
+backend routes for you. If you change the API port, update `apps/web/vite.config.ts`.
 
 ## Tests, types, lint
 

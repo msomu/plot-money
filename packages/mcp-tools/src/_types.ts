@@ -6,10 +6,13 @@
 // without any global state.
 
 import type { ZodRawShape, ZodTypeAny } from 'zod';
+import type { AppDB } from '@plot-money/shared';
 
 export type ToolContext = {
   /** Resolved by the API auth middleware before the MCP transport runs. */
   userId: string;
+  /** Drizzle handle bound to this request's D1 database. */
+  db: AppDB;
 };
 
 export type ToolDef<Input = unknown, Output = unknown> = {

@@ -1,39 +1,48 @@
-// Better Auth tables.
+// Better Auth tables — SQLite/D1 dialect.
 //
-// Schema mirrors Better Auth's default Drizzle output so the library's
-// Postgres adapter can use these tables without remapping. Wired up in
-// Phase 3. RLS is intentionally NOT applied here — Better Auth manages
-// access internally via short-lived sessions and bearer tokens that we
-// scope at the application layer, not the row layer.
+// Field shapes mirror Better Auth's default Drizzle output for sqlite so the
+// library's adapter can use these tables without remapping. Tenant isolation
+// for these tables is internal to Better Auth (sessions are short-lived,
+// tokens are bearer-validated) — there is no app-layer userId predicate
+// applied to them, so they live outside withTenant.
 
-import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-export const users = pgTable('users', {
+const nowMs = sql`(cast(unixepoch('subsecond') * 1000 as integer))`;
+
+export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
-  emailVerified: boolean('email_verified').notNull().default(false),
+  emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
   name: text('name').notNull(),
   image: text('image'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => new Date()),
 });
 
-export const sessions = pgTable('sessions', {
+export const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
   token: text('token').notNull().unique(),
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => new Date()),
 });
 
-// Better Auth's "account" table holds OAuth provider links. Renamed to
+// Better Auth's "account" table holds OAuth provider links. Renamed
 // oauth_accounts here so it doesn't clash with our financial accounts table.
-export const oauthAccounts = pgTable('oauth_accounts', {
+export const oauthAccounts = sqliteTable('oauth_accounts', {
   id: text('id').primaryKey(),
   accountId: text('account_id').notNull(),
   providerId: text('provider_id').notNull(),
@@ -43,21 +52,27 @@ export const oauthAccounts = pgTable('oauth_accounts', {
   accessToken: text('access_token'),
   refreshToken: text('refresh_token'),
   idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp_ms' }),
+  refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp_ms' }),
   scope: text('scope'),
   password: text('password'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => new Date()),
 });
 
-export const verifications = pgTable('verifications', {
+export const verifications = sqliteTable('verifications', {
   id: text('id').primaryKey(),
   identifier: text('identifier').notNull(),
   value: text('value').notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => new Date()),
 });
 
 export type User = typeof users.$inferSelect;

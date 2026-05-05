@@ -16,6 +16,6 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "types": ["bun-types"]
+    "types": ["@cloudflare/workers-types", "bun-types"]
   }
 }

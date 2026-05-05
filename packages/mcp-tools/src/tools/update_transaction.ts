@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { eq, sql as rawSql } from 'drizzle-orm';
-import { AppError, CATEGORIES, TRANSACTION_TYPES, schema, withRls } from '@plot-money/shared';
-import { dateOnly, formatAmount, parseAmount, parseTransactionDate } from '../_helpers.ts';
+import { and, eq, sql as rawSql } from 'drizzle-orm';
+import { AppError, CATEGORIES, TRANSACTION_TYPES, schema, tenant } from '@plot-money/shared';
+import { parseTransactionDate } from '../_helpers.ts';
+import { fromPaise, toPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 const inputSchema = {
@@ -43,77 +44,77 @@ const tool: ToolDef<Input, Output> = {
     'Update fields of an existing transaction. If amount or type changes, the account balance is recomputed atomically. account_id cannot be changed (delete and re-create instead).',
   inputSchema,
   async handler(input, ctx) {
-    const newDate = input.transaction_date
+    const t = tenant(ctx.userId);
+    const db = ctx.db;
+    const newDateStr = input.transaction_date
       ? parseTransactionDate(input.transaction_date)
       : undefined;
 
-    return await withRls(ctx.userId, async (tx) => {
-      const beforeRows = await tx
-        .select()
-        .from(schema.transactions)
-        .where(eq(schema.transactions.id, input.transaction_id))
-        .limit(1);
-      const before = beforeRows[0];
-      if (!before) {
-        throw new AppError('NOT_FOUND', `Transaction not found: ${input.transaction_id}`);
-      }
+    const [before] = await db
+      .select()
+      .from(schema.transactions)
+      .where(and(t.transactions, eq(schema.transactions.id, input.transaction_id)))
+      .limit(1);
+    if (!before) {
+      throw new AppError('NOT_FOUND', `Transaction not found: ${input.transaction_id}`);
+    }
 
-      const newAmount = input.amount ?? parseAmount(before.amount);
-      const newType = input.type ?? before.type;
+    const newAmountPaise = input.amount !== undefined ? toPaise(input.amount) : before.amountPaise;
+    const newType = input.type ?? before.type;
 
-      const oldDelta =
-        before.type === 'credit' ? parseAmount(before.amount) : -parseAmount(before.amount);
-      const newDelta = newType === 'credit' ? newAmount : -newAmount;
-      const balanceChange = newDelta - oldDelta;
+    const oldDelta = before.type === 'credit' ? before.amountPaise : -before.amountPaise;
+    const newDelta = newType === 'credit' ? newAmountPaise : -newAmountPaise;
+    const balanceChangePaise = newDelta - oldDelta;
 
-      const updated = await tx
-        .update(schema.transactions)
+    const [updated] = await db
+      .update(schema.transactions)
+      .set({
+        amountPaise: input.amount !== undefined ? newAmountPaise : undefined,
+        type: input.type,
+        category: input.category,
+        description: input.description,
+        ...(newDateStr ? { transactionDate: newDateStr } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(t.transactions, eq(schema.transactions.id, input.transaction_id)))
+      .returning();
+    if (!updated) throw new Error('update_transaction: update returned no rows');
+
+    let accountBalancePaise: number;
+    if (balanceChangePaise !== 0) {
+      const [acc] = await db
+        .update(schema.accounts)
         .set({
-          amount: input.amount !== undefined ? formatAmount(input.amount) : undefined,
-          type: input.type,
-          category: input.category,
-          description: input.description,
-          ...(newDate ? { transactionDate: newDate } : {}),
-          updatedAt: rawSql`now()`,
+          balancePaise: rawSql`${schema.accounts.balancePaise} + ${balanceChangePaise}`,
+          updatedAt: new Date(),
         })
-        .where(eq(schema.transactions.id, input.transaction_id))
-        .returning();
+        .where(and(t.accounts, eq(schema.accounts.id, before.accountId)))
+        .returning({ balancePaise: schema.accounts.balancePaise });
+      if (!acc) throw new Error('update_transaction: account balance update returned no rows');
+      accountBalancePaise = acc.balancePaise;
+    } else {
+      const [acc] = await db
+        .select({ balancePaise: schema.accounts.balancePaise })
+        .from(schema.accounts)
+        .where(and(t.accounts, eq(schema.accounts.id, before.accountId)))
+        .limit(1);
+      if (!acc) throw new Error('update_transaction: account read returned no rows');
+      accountBalancePaise = acc.balancePaise;
+    }
 
-      let accountBalanceAfter: string;
-      if (balanceChange !== 0) {
-        const acc = await tx
-          .update(schema.accounts)
-          .set({
-            balance: rawSql`${schema.accounts.balance} + ${balanceChange}`,
-            updatedAt: rawSql`now()`,
-          })
-          .where(eq(schema.accounts.id, before.accountId))
-          .returning({ balance: schema.accounts.balance });
-        accountBalanceAfter = acc[0]!.balance;
-      } else {
-        const acc = await tx
-          .select({ balance: schema.accounts.balance })
-          .from(schema.accounts)
-          .where(eq(schema.accounts.id, before.accountId))
-          .limit(1);
-        accountBalanceAfter = acc[0]!.balance;
-      }
-
-      const t = updated[0]!;
-      return {
-        transaction: {
-          id: t.id,
-          account_id: t.accountId,
-          amount: parseAmount(t.amount),
-          type: t.type,
-          category: t.category,
-          description: t.description,
-          transaction_date: dateOnly(t.transactionDate),
-          created_at: t.createdAt.toISOString(),
-        },
-        account_balance_after: parseAmount(accountBalanceAfter),
-      };
-    });
+    return {
+      transaction: {
+        id: updated.id,
+        account_id: updated.accountId,
+        amount: fromPaise(updated.amountPaise),
+        type: updated.type,
+        category: updated.category,
+        description: updated.description,
+        transaction_date: updated.transactionDate,
+        created_at: updated.createdAt.toISOString(),
+      },
+      account_balance_after: fromPaise(accountBalancePaise),
+    };
   },
 };
 

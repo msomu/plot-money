@@ -1,11 +1,8 @@
-// Liveness + readiness in one tiny route.
-//
-// Returns 200 with build metadata if Postgres is reachable, 503 if not.
-// Used by Railway / uptime monitors. No auth.
+// Liveness + readiness in one tiny route. Returns 200 if D1 is reachable,
+// 503 if not. No auth.
 
 import { Hono } from 'hono';
 import { sql as rawSql } from 'drizzle-orm';
-import { withOwner } from '@plot-money/shared';
 import type { AppEnv } from '../types.ts';
 
 export const healthRoute = new Hono<AppEnv>();
@@ -14,9 +11,7 @@ healthRoute.get('/health', async (c) => {
   let dbOk = false;
   let dbError: string | undefined;
   try {
-    await withOwner(async (tx) => {
-      await tx.execute(rawSql`select 1`);
-    });
+    await c.var.db.run(rawSql`select 1`);
     dbOk = true;
   } catch (err) {
     dbError = err instanceof Error ? err.message : String(err);

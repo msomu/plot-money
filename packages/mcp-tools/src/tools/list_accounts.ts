@@ -1,6 +1,6 @@
 import { desc } from 'drizzle-orm';
-import { schema, withRls } from '@plot-money/shared';
-import { parseAmount } from '../_helpers.ts';
+import { schema, tenant } from '@plot-money/shared';
+import { fromPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 type Output = {
@@ -20,26 +20,26 @@ const tool: ToolDef<Record<string, never>, Output> = {
   description: 'Returns every financial account belonging to the authenticated user.',
   inputSchema: {},
   async handler(_input, ctx) {
-    const rows = await withRls(ctx.userId, (tx) =>
-      tx
-        .select({
-          id: schema.accounts.id,
-          name: schema.accounts.name,
-          type: schema.accounts.type,
-          currency: schema.accounts.currency,
-          balance: schema.accounts.balance,
-          createdAt: schema.accounts.createdAt,
-        })
-        .from(schema.accounts)
-        .orderBy(desc(schema.accounts.createdAt)),
-    );
+    const t = tenant(ctx.userId);
+    const rows = await ctx.db
+      .select({
+        id: schema.accounts.id,
+        name: schema.accounts.name,
+        type: schema.accounts.type,
+        currency: schema.accounts.currency,
+        balancePaise: schema.accounts.balancePaise,
+        createdAt: schema.accounts.createdAt,
+      })
+      .from(schema.accounts)
+      .where(t.accounts)
+      .orderBy(desc(schema.accounts.createdAt));
     return {
       accounts: rows.map((r) => ({
         id: r.id,
         name: r.name,
         type: r.type,
         currency: r.currency,
-        balance: parseAmount(r.balance),
+        balance: fromPaise(r.balancePaise),
         created_at: r.createdAt.toISOString(),
       })),
     };

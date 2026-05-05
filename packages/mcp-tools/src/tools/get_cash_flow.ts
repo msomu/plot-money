@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { and, eq, gte, lte, sql as rawSql, type SQL } from 'drizzle-orm';
-import { schema, withRls } from '@plot-money/shared';
-import { parseAmount, parseRangeDate } from '../_helpers.ts';
+import { schema, tenant } from '@plot-money/shared';
+import { parseRangeDate } from '../_helpers.ts';
+import { fromPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 const inputSchema = {
@@ -32,46 +33,46 @@ const tool: ToolDef<Input, Output> = {
     'Returns total income, total expenses, and net cash flow for a date range. Optionally scoped to one account.',
   inputSchema,
   async handler(input, ctx) {
+    const t = tenant(ctx.userId);
     const from = parseRangeDate(input.from_date, 'from_date');
     const to = parseRangeDate(input.to_date, 'to_date');
 
     const conditions: SQL[] = [
+      t.transactions,
       gte(schema.transactions.transactionDate, from),
       lte(schema.transactions.transactionDate, to),
     ];
     if (input.account_id) conditions.push(eq(schema.transactions.accountId, input.account_id));
 
-    return await withRls(ctx.userId, async (tx) => {
-      const rows = await tx
-        .select({
-          type: schema.transactions.type,
-          total: rawSql<string>`coalesce(sum(${schema.transactions.amount}), 0)`,
-          count: rawSql<string>`count(*)`,
-        })
-        .from(schema.transactions)
-        .where(and(...conditions))
-        .groupBy(schema.transactions.type);
+    const rows = await ctx.db
+      .select({
+        type: schema.transactions.type,
+        totalPaise: rawSql<number>`coalesce(sum(${schema.transactions.amountPaise}), 0)`,
+        count: rawSql<number>`count(*)`,
+      })
+      .from(schema.transactions)
+      .where(and(...conditions))
+      .groupBy(schema.transactions.type);
 
-      let income = 0;
-      let expenses = 0;
-      let count = 0;
-      for (const r of rows) {
-        const total = parseAmount(r.total);
-        const c = Number(r.count);
-        if (r.type === 'credit') income += total;
-        else expenses += total;
-        count += c;
-      }
-      return {
-        from_date: input.from_date,
-        to_date: input.to_date,
-        income,
-        expenses,
-        net: income - expenses,
-        transaction_count: count,
-        currency: 'INR',
-      };
-    });
+    let income = 0;
+    let expenses = 0;
+    let count = 0;
+    for (const r of rows) {
+      const total = fromPaise(Number(r.totalPaise));
+      const c = Number(r.count);
+      if (r.type === 'credit') income += total;
+      else expenses += total;
+      count += c;
+    }
+    return {
+      from_date: input.from_date,
+      to_date: input.to_date,
+      income,
+      expenses,
+      net: income - expenses,
+      transaction_count: count,
+      currency: 'INR',
+    };
   },
 };
 

@@ -25,7 +25,7 @@ export async function handleMcpRequest(c: Context<AppEnv>): Promise<Response> {
   }
 
   const server = new McpServer({ name: NAME, version: VERSION });
-  registerTools(server, { userId });
+  registerTools(server, { userId, db: c.var.db });
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless — each request stands alone

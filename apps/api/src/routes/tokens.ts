@@ -12,9 +12,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { AppError, schema, withRls } from '@plot-money/shared';
+import { AppError, schema, tenant } from '@plot-money/shared';
 import { generateToken, hashToken } from '../lib/tokens.ts';
-import { loadEnv } from '../env.ts';
 import type { AppEnv } from '../types.ts';
 
 export const tokensRoute = new Hono<AppEnv>();
@@ -26,19 +25,18 @@ const generateSchema = z.object({
 tokensRoute.get('/api/tokens', async (c) => {
   const userId = c.get('userId');
   if (!userId) throw new AppError('UNAUTHORIZED', 'Auth required');
+  const t = tenant(userId);
 
-  const rows = await withRls(userId, (tx) =>
-    tx
-      .select({
-        id: schema.mcpTokens.id,
-        name: schema.mcpTokens.name,
-        lastUsedAt: schema.mcpTokens.lastUsedAt,
-        createdAt: schema.mcpTokens.createdAt,
-      })
-      .from(schema.mcpTokens)
-      .where(isNull(schema.mcpTokens.revokedAt))
-      .orderBy(desc(schema.mcpTokens.createdAt)),
-  );
+  const rows = await c.var.db
+    .select({
+      id: schema.mcpTokens.id,
+      name: schema.mcpTokens.name,
+      lastUsedAt: schema.mcpTokens.lastUsedAt,
+      createdAt: schema.mcpTokens.createdAt,
+    })
+    .from(schema.mcpTokens)
+    .where(and(t.mcpTokens, isNull(schema.mcpTokens.revokedAt)))
+    .orderBy(desc(schema.mcpTokens.createdAt));
 
   return c.json({
     tokens: rows.map((r) => ({
@@ -54,7 +52,6 @@ tokensRoute.post('/api/tokens', async (c) => {
   const userId = c.get('userId');
   if (!userId) throw new AppError('UNAUTHORIZED', 'Auth required');
 
-  const env = loadEnv();
   const body = await c.req.json().catch(() => ({}));
   const parsed = generateSchema.safeParse(body);
   if (!parsed.success) {
@@ -62,42 +59,38 @@ tokensRoute.post('/api/tokens', async (c) => {
   }
 
   const rawToken = generateToken();
-  const tokenHash = hashToken(rawToken, env.APP_SECRET);
+  const tokenHash = hashToken(rawToken, c.env.APP_SECRET);
 
-  const created = await withRls(userId, async (tx) => {
-    const rows = await tx
-      .insert(schema.mcpTokens)
-      .values({ userId, name: parsed.data.name, tokenHash })
-      .returning({
-        id: schema.mcpTokens.id,
-        name: schema.mcpTokens.name,
-        createdAt: schema.mcpTokens.createdAt,
-      });
-    return rows[0]!;
-  });
+  const [created] = await c.var.db
+    .insert(schema.mcpTokens)
+    .values({ userId, name: parsed.data.name, tokenHash })
+    .returning({
+      id: schema.mcpTokens.id,
+      name: schema.mcpTokens.name,
+      createdAt: schema.mcpTokens.createdAt,
+    });
 
   // The raw token is shown once and never persisted — anything saved to
   // logs / metrics here would defeat the entire hash-on-store design.
   return c.json({
-    id: created.id,
-    name: created.name,
+    id: created!.id,
+    name: created!.name,
     token: rawToken,
-    created_at: created.createdAt.toISOString(),
+    created_at: created!.createdAt.toISOString(),
   });
 });
 
 tokensRoute.delete('/api/tokens/:id', async (c) => {
   const userId = c.get('userId');
   if (!userId) throw new AppError('UNAUTHORIZED', 'Auth required');
+  const t = tenant(userId);
 
   const id = c.req.param('id');
-  const result = await withRls(userId, (tx) =>
-    tx
-      .update(schema.mcpTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(schema.mcpTokens.id, id), isNull(schema.mcpTokens.revokedAt)))
-      .returning({ id: schema.mcpTokens.id }),
-  );
+  const result = await c.var.db
+    .update(schema.mcpTokens)
+    .set({ revokedAt: new Date() })
+    .where(and(t.mcpTokens, eq(schema.mcpTokens.id, id), isNull(schema.mcpTokens.revokedAt)))
+    .returning({ id: schema.mcpTokens.id });
 
   if (result.length === 0) {
     throw new AppError('NOT_FOUND', `Token not found or already revoked: ${id}`);

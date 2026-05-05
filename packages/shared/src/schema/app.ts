@@ -1,12 +1,15 @@
-// plot.money domain tables.
+// plot.money domain tables — SQLite/D1 dialect.
 //
-// Every table here MUST have user_id and is governed by the tenant_isolation
-// RLS policy created in the custom migration. The app role queries with
-// `SET LOCAL app.current_user_id = '<uuid>'` per request.
+// Tenant isolation moves from Postgres RLS to the application layer via
+// withTenant() in db.ts. Every table here MUST have user_id; that's the
+// predicate the scoped client auto-injects on every read/write/delete.
+//
+// Money is stored as INTEGER paise (₹1.00 = 100). No floats anywhere in the
+// data path — IEEE 754 and finance don't mix. Conversion to rupees happens
+// only at the API boundary in the MCP tool handlers.
 
 import { sql } from 'drizzle-orm';
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
-import { numeric } from 'drizzle-orm/pg-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import {
   ACCOUNT_TYPES,
   CATEGORIES,
@@ -15,31 +18,29 @@ import {
 } from '../categories.ts';
 import { users } from './auth.ts';
 
-// Postgres enums kept in sync with the TS const arrays in categories.ts.
-export const accountTypeEnum = pgEnum('account_type', ACCOUNT_TYPES);
-export const transactionTypeEnum = pgEnum('transaction_type', TRANSACTION_TYPES);
-export const categoryEnum = pgEnum('category', CATEGORIES);
-export const subscriptionStatusEnum = pgEnum('subscription_status', SUBSCRIPTION_STATUSES);
+const nowMs = sql`(cast(unixepoch('subsecond') * 1000 as integer))`;
+const newId = () => crypto.randomUUID();
 
 const userIdRef = () =>
   text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' });
 
-export const subscriptions = pgTable(
+export const subscriptions = sqliteTable(
   'subscriptions',
   {
-    id: text('id')
-      .primaryKey()
-      .default(sql`gen_random_uuid()::text`),
+    id: text('id').primaryKey().$defaultFn(newId),
     userId: userIdRef(),
     razorpaySubscriptionId: text('razorpay_subscription_id').notNull(),
     razorpayCustomerId: text('razorpay_customer_id'),
-    status: subscriptionStatusEnum('status').notNull().default('created'),
-    currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
-    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    status: text('status', { enum: SUBSCRIPTION_STATUSES }).notNull().default('created'),
+    currentPeriodStart: integer('current_period_start', { mode: 'timestamp_ms' }),
+    currentPeriodEnd: integer('current_period_end', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .default(nowMs)
+      .$onUpdate(() => new Date()),
   },
   (t) => [
     uniqueIndex('subscriptions_razorpay_id_idx').on(t.razorpaySubscriptionId),
@@ -47,59 +48,60 @@ export const subscriptions = pgTable(
   ],
 );
 
-export const mcpTokens = pgTable(
+export const mcpTokens = sqliteTable(
   'mcp_tokens',
   {
-    id: text('id')
-      .primaryKey()
-      .default(sql`gen_random_uuid()::text`),
+    id: text('id').primaryKey().$defaultFn(newId),
     userId: userIdRef(),
     tokenHash: text('token_hash').notNull().unique(),
     name: text('name').notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [index('mcp_tokens_user_id_idx').on(t.userId)],
 );
 
-export const accounts = pgTable(
+export const accounts = sqliteTable(
   'accounts',
   {
-    id: text('id')
-      .primaryKey()
-      .default(sql`gen_random_uuid()::text`),
+    id: text('id').primaryKey().$defaultFn(newId),
     userId: userIdRef(),
     name: text('name').notNull(),
-    type: accountTypeEnum('type').notNull(),
+    type: text('type', { enum: ACCOUNT_TYPES }).notNull(),
     currency: text('currency').notNull().default('INR'),
-    // Denormalised, recomputed on transaction insert/update/delete.
-    // Stored as numeric(20,2) — paise-precision rupees up to a few quadrillion.
-    balance: numeric('balance', { precision: 20, scale: 2 }).notNull().default('0'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // Paise. Denormalised, recomputed on transaction insert/update/delete.
+    balancePaise: integer('balance_paise').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .default(nowMs)
+      .$onUpdate(() => new Date()),
   },
   (t) => [index('accounts_user_id_idx').on(t.userId)],
 );
 
-export const transactions = pgTable(
+export const transactions = sqliteTable(
   'transactions',
   {
-    id: text('id')
-      .primaryKey()
-      .default(sql`gen_random_uuid()::text`),
+    id: text('id').primaryKey().$defaultFn(newId),
     userId: userIdRef(),
     accountId: text('account_id')
       .notNull()
       .references(() => accounts.id, { onDelete: 'restrict' }),
-    // Always positive. The `type` column tells you the direction.
-    amount: numeric('amount', { precision: 20, scale: 2 }).notNull(),
-    type: transactionTypeEnum('type').notNull(),
-    category: categoryEnum('category').notNull(),
+    // Always positive paise. The `type` column tells you the direction.
+    amountPaise: integer('amount_paise').notNull(),
+    type: text('type', { enum: TRANSACTION_TYPES }).notNull(),
+    category: text('category', { enum: CATEGORIES }).notNull(),
     description: text('description').notNull(),
-    transactionDate: timestamp('transaction_date', { withTimezone: false, mode: 'date' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // ISO date string (YYYY-MM-DD). Storing as text keeps it stable across
+    // timezones — we never want UTC drift on someone's "April 28th" txn.
+    transactionDate: text('transaction_date').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .default(nowMs)
+      .$onUpdate(() => new Date()),
   },
   (t) => [
     index('transactions_user_id_idx').on(t.userId),

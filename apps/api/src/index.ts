@@ -1,14 +1,14 @@
-// Entry point. Boots Bun's HTTP server using the Hono app factory.
+// Cloudflare Workers entry point.
+//
+// `wrangler dev` looks for the default export with a `fetch` handler. Hono's
+// `app.fetch` matches the signature exactly: (Request, Env, ExecutionContext)
+// → Promise<Response>.
 
 import { createApp } from './app.ts';
-import { loadEnv } from './env.ts';
+import type { Bindings } from './types.ts';
 
-const env = loadEnv();
 const app = createApp();
 
-const server = Bun.serve({
-  port: env.PORT,
+export default {
   fetch: app.fetch,
-});
-
-console.log(`plot.money api listening on http://localhost:${server.port}`);
+} satisfies ExportedHandler<Bindings>;

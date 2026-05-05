@@ -7,8 +7,8 @@
 // the user never sees.
 
 import { Hono } from 'hono';
-import { desc, eq } from 'drizzle-orm';
-import { AppError, schema, withRls } from '@plot-money/shared';
+import { and, desc, eq } from 'drizzle-orm';
+import { AppError, schema, tenant } from '@plot-money/shared';
 import type { AppEnv } from '../types.ts';
 
 export const subscriptionRoute = new Hono<AppEnv>();
@@ -19,19 +19,18 @@ const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 subscriptionRoute.get('/api/subscription/status', async (c) => {
   const userId = c.get('userId');
   if (!userId) throw new AppError('UNAUTHORIZED', 'Auth required');
+  const t = tenant(userId);
 
-  const rows = await withRls(userId, (tx) =>
-    tx
-      .select({
-        status: schema.subscriptions.status,
-        currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
-      })
-      .from(schema.subscriptions)
-      .orderBy(desc(schema.subscriptions.createdAt))
-      .limit(1),
-  );
+  const [sub] = await c.var.db
+    .select({
+      status: schema.subscriptions.status,
+      currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
+    })
+    .from(schema.subscriptions)
+    .where(t.subscriptions)
+    .orderBy(desc(schema.subscriptions.createdAt))
+    .limit(1);
 
-  const sub = rows[0];
   return c.json({
     active: sub?.status === 'active',
     status: sub?.status ?? null,
@@ -42,59 +41,59 @@ subscriptionRoute.get('/api/subscription/status', async (c) => {
 subscriptionRoute.post('/api/subscription/activate', async (c) => {
   const userId = c.get('userId');
   if (!userId) throw new AppError('UNAUTHORIZED', 'Auth required');
+  const t = tenant(userId);
 
   const now = new Date();
   const periodEnd = new Date(now.getTime() + ONE_MONTH_MS);
   // Each user gets their own placeholder provider id so the unique index
   // on razorpay_subscription_id never clashes across users.
   const providerId = `${PLACEHOLDER_PROVIDER_ID}_${userId.slice(0, 8)}`;
+  const db = c.var.db;
 
-  return await withRls(userId, async (tx) => {
-    const existing = await tx
-      .select({ id: schema.subscriptions.id })
-      .from(schema.subscriptions)
-      .where(eq(schema.subscriptions.razorpaySubscriptionId, providerId))
-      .limit(1);
+  const [existing] = await db
+    .select({ id: schema.subscriptions.id })
+    .from(schema.subscriptions)
+    .where(and(t.subscriptions, eq(schema.subscriptions.razorpaySubscriptionId, providerId)))
+    .limit(1);
 
-    if (existing.length > 0) {
-      const updated = await tx
-        .update(schema.subscriptions)
-        .set({
-          status: 'active',
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
-          updatedAt: now,
-        })
-        .where(eq(schema.subscriptions.id, existing[0]!.id))
-        .returning({
-          status: schema.subscriptions.status,
-          currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
-        });
-      return c.json({
-        active: true,
-        status: updated[0]!.status,
-        current_period_end: updated[0]!.currentPeriodEnd?.toISOString() ?? null,
-      });
-    }
-
-    const created = await tx
-      .insert(schema.subscriptions)
-      .values({
-        userId,
-        razorpaySubscriptionId: providerId,
+  if (existing) {
+    const [updated] = await db
+      .update(schema.subscriptions)
+      .set({
         status: 'active',
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
+        updatedAt: now,
       })
+      .where(and(t.subscriptions, eq(schema.subscriptions.id, existing.id)))
       .returning({
         status: schema.subscriptions.status,
         currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
       });
-
     return c.json({
       active: true,
-      status: created[0]!.status,
-      current_period_end: created[0]!.currentPeriodEnd?.toISOString() ?? null,
+      status: updated!.status,
+      current_period_end: updated!.currentPeriodEnd?.toISOString() ?? null,
     });
+  }
+
+  const [created] = await db
+    .insert(schema.subscriptions)
+    .values({
+      userId,
+      razorpaySubscriptionId: providerId,
+      status: 'active',
+      currentPeriodStart: now,
+      currentPeriodEnd: periodEnd,
+    })
+    .returning({
+      status: schema.subscriptions.status,
+      currentPeriodEnd: schema.subscriptions.currentPeriodEnd,
+    });
+
+  return c.json({
+    active: true,
+    status: created!.status,
+    current_period_end: created!.currentPeriodEnd?.toISOString() ?? null,
   });
 });

@@ -2,12 +2,12 @@
 // the user can sign in and look at the dashboard, but can't actually call
 // MCP tools.
 //
-// Read happens under the user's RLS context, so we can't see other users'
-// subs even by accident.
+// Read happens scoped to the user (tenant() predicate) so we never see
+// other users' subs even by accident.
 
 import type { MiddlewareHandler } from 'hono';
-import { eq } from 'drizzle-orm';
-import { AppError, schema, withRls } from '@plot-money/shared';
+import { and, eq } from 'drizzle-orm';
+import { AppError, schema, tenant } from '@plot-money/shared';
 import type { AppEnv } from '../types.ts';
 
 export function requireActiveSubscription(): MiddlewareHandler<AppEnv> {
@@ -17,14 +17,12 @@ export function requireActiveSubscription(): MiddlewareHandler<AppEnv> {
       throw new AppError('UNAUTHORIZED', 'Auth required before subscription check');
     }
 
-    const active = await withRls(userId, async (tx) => {
-      const rows = await tx
-        .select({ status: schema.subscriptions.status })
-        .from(schema.subscriptions)
-        .where(eq(schema.subscriptions.status, 'active'))
-        .limit(1);
-      return rows.length > 0;
-    });
+    const t = tenant(userId);
+    const [active] = await c.var.db
+      .select({ status: schema.subscriptions.status })
+      .from(schema.subscriptions)
+      .where(and(t.subscriptions, eq(schema.subscriptions.status, 'active')))
+      .limit(1);
 
     if (!active) {
       throw new AppError(

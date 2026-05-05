@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
-import { AppError, schema, withRls } from '@plot-money/shared';
-import { parseAmount } from '../_helpers.ts';
+import { and, eq } from 'drizzle-orm';
+import { AppError, schema, tenant } from '@plot-money/shared';
+import { fromPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 const inputSchema = {
@@ -30,46 +30,48 @@ const tool: ToolDef<Input, SingleOutput | AllOutput> = {
     'Get the balance of a single account, or all accounts (with grand total) if account_id is omitted.',
   inputSchema,
   async handler(input, ctx) {
-    return await withRls(ctx.userId, async (tx) => {
-      if (input.account_id) {
-        const rows = await tx
-          .select({
-            id: schema.accounts.id,
-            name: schema.accounts.name,
-            balance: schema.accounts.balance,
-            currency: schema.accounts.currency,
-          })
-          .from(schema.accounts)
-          .where(eq(schema.accounts.id, input.account_id))
-          .limit(1);
-        const r = rows[0];
-        if (!r) throw new AppError('NOT_FOUND', `Account not found: ${input.account_id}`);
-        return {
-          account_id: r.id,
-          account_name: r.name,
-          balance: parseAmount(r.balance),
-          currency: r.currency,
-        };
-      }
-      const rows = await tx
+    const t = tenant(ctx.userId);
+    const db = ctx.db;
+
+    if (input.account_id) {
+      const [r] = await db
         .select({
           id: schema.accounts.id,
           name: schema.accounts.name,
-          type: schema.accounts.type,
-          balance: schema.accounts.balance,
+          balancePaise: schema.accounts.balancePaise,
           currency: schema.accounts.currency,
         })
-        .from(schema.accounts);
-      const accounts = rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        type: r.type,
-        balance: parseAmount(r.balance),
+        .from(schema.accounts)
+        .where(and(t.accounts, eq(schema.accounts.id, input.account_id)))
+        .limit(1);
+      if (!r) throw new AppError('NOT_FOUND', `Account not found: ${input.account_id}`);
+      return {
+        account_id: r.id,
+        account_name: r.name,
+        balance: fromPaise(r.balancePaise),
         currency: r.currency,
-      }));
-      const total = accounts.reduce((acc, a) => acc + a.balance, 0);
-      return { accounts, total_balance: total, currency: 'INR' };
-    });
+      };
+    }
+
+    const rows = await db
+      .select({
+        id: schema.accounts.id,
+        name: schema.accounts.name,
+        type: schema.accounts.type,
+        balancePaise: schema.accounts.balancePaise,
+        currency: schema.accounts.currency,
+      })
+      .from(schema.accounts)
+      .where(t.accounts);
+    const accounts = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      balance: fromPaise(r.balancePaise),
+      currency: r.currency,
+    }));
+    const total = accounts.reduce((acc, a) => acc + a.balance, 0);
+    return { accounts, total_balance: total, currency: 'INR' };
   },
 };
 

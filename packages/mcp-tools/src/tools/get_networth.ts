@@ -1,6 +1,6 @@
 import { sql as rawSql } from 'drizzle-orm';
-import { schema, withRls } from '@plot-money/shared';
-import { parseAmount } from '../_helpers.ts';
+import { schema, tenant } from '@plot-money/shared';
+import { fromPaise } from '../_money.ts';
 import type { ToolDef } from '../_types.ts';
 
 type Output = {
@@ -21,22 +21,22 @@ const tool: ToolDef<Record<string, never>, Output> = {
     'Returns total net worth grouped by account type. Credit-card balances are subtracted as liabilities. Convention: credit_card.balance is the amount owed.',
   inputSchema: {},
   async handler(_input, ctx) {
-    const rows = await withRls(ctx.userId, async (tx) =>
-      tx
-        .select({
-          type: schema.accounts.type,
-          total: rawSql<string>`coalesce(sum(${schema.accounts.balance}), 0)`,
-        })
-        .from(schema.accounts)
-        .groupBy(schema.accounts.type),
-    );
+    const t = tenant(ctx.userId);
+    const rows = await ctx.db
+      .select({
+        type: schema.accounts.type,
+        totalPaise: rawSql<number>`coalesce(sum(${schema.accounts.balancePaise}), 0)`,
+      })
+      .from(schema.accounts)
+      .where(t.accounts)
+      .groupBy(schema.accounts.type);
 
     let totalAssets = 0;
     let totalLiabilities = 0;
     const byType: Array<{ type: string; value: number }> = [];
 
     for (const r of rows) {
-      const balance = parseAmount(r.total);
+      const balance = fromPaise(Number(r.totalPaise));
       if (LIABILITY_TYPES.has(r.type)) {
         totalLiabilities += balance;
         byType.push({ type: r.type, value: -balance });

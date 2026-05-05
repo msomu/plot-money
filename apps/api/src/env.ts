@@ -1,56 +1,36 @@
-// Typed env access. Bun reads .env / .env.local automatically — this module
-// just validates and exposes typed accessors. Anything required for boot is
-// asserted eagerly in `loadEnv()` so missing config crashes the process at
-// startup rather than mid-request.
+// Per-request env validation for Workers.
+//
+// Unlike the Bun version (which read process.env once at boot), Workers
+// receive bindings on `c.env` per request — secrets land there too via
+// `wrangler secret put`. We validate on the first call per request and
+// crash loud if anything required is missing.
 
 import { z } from 'zod';
+import type { Bindings } from './types.ts';
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(3000),
-  APP_URL: z.string().url().default('http://localhost:3000'),
-  WEB_URL: z.string().url().default('http://localhost:5173'),
+  APP_URL: z.url().default('http://localhost:8787'),
+  WEB_URL: z.url().default('http://localhost:5173'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
 
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-
-  // Salt for HMAC-hashing MCP bearer tokens. Generate with `openssl rand -hex 32`.
-  // Must be stable — rotating it invalidates all existing tokens.
   APP_SECRET: z.string().min(32, 'APP_SECRET must be at least 32 chars'),
-
-  // Better Auth — secret signs sessions/cookies. Stable across the deployment.
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 chars'),
 
-  // Optional in dev — if absent, Google sign-in is simply not registered.
-  GOOGLE_CLIENT_ID: z
-    .string()
-    .optional()
-    .transform((v) => v || undefined),
-  GOOGLE_CLIENT_SECRET: z
-    .string()
-    .optional()
-    .transform((v) => v || undefined),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema> & { ALLOWED_ORIGINS_LIST: string[] };
 
-let cached: Env | undefined;
-
-export function loadEnv(): Env {
-  if (cached) return cached;
-  const parsed = EnvSchema.safeParse(process.env);
+export function loadEnv(bindings: Pick<Bindings, keyof z.infer<typeof EnvSchema>>): Env {
+  const parsed = EnvSchema.safeParse(bindings);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
-  cached = {
+  return {
     ...parsed.data,
     ALLOWED_ORIGINS_LIST: parsed.data.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),
   };
-  return cached;
-}
-
-/** For tests: clear the cache so a fresh loadEnv() picks up new process.env. */
-export function _resetEnvForTests(): void {
-  cached = undefined;
 }
