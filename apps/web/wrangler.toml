@@ -16,6 +16,15 @@ enabled = true
 name = "plot-money-web"
 routes = [{ pattern = "plot.money/*", zone_name = "plot.money" }]
 
+# Service binding — direct Worker-to-Worker call into the api Worker.
+# SSR load functions use `platform.env.API.fetch(...)` to talk to the
+# api without going back out through Cloudflare's edge. Avoids the
+# 522 self-loopback that public-fetch hits when both Workers live on
+# the same zone.
+[[env.production.services]]
+binding = "API"
+service = "plot-money-api"
+
 [env.production.observability]
 enabled = true
 
@@ -26,6 +35,10 @@ enabled = true
 [env.preview]
 name = "plot-money-web-preview"
 routes = [{ pattern = "p.plot.money/*", zone_name = "plot.money" }]
+
+[[env.preview.services]]
+binding = "API"
+service = "plot-money-api-preview"
 
 [env.preview.observability]
 enabled = true

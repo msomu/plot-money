@@ -1,10 +1,10 @@
-// Loads tokens (and a placeholder subscription status) for the dashboard.
+// Loads tokens + subscription status for the dashboard.
 //
-// Talks to the API via the Vite proxy in dev / shared subdomain in prod,
-// forwarding the cookie so Better Auth can identify the user. Never
-// returns the raw token — that only exists in the response of the
-// generate POST below.
+// Talks to the api Worker via the apiFetch helper (service binding in
+// prod, Vite proxy in dev). Never returns the raw token — that only
+// lives in the response of the generate POST.
 
+import { apiFetch } from '$lib/api';
 import type { PageServerLoad } from './$types';
 
 type TokenRow = {
@@ -14,12 +14,10 @@ type TokenRow = {
   created_at: string;
 };
 
-export const load: PageServerLoad = async ({ fetch, request }) => {
-  const cookie = request.headers.get('cookie') ?? '';
-
+export const load: PageServerLoad = async (event) => {
   const [tokensRes, subRes] = await Promise.all([
-    fetch('/api/tokens', { headers: { cookie } }),
-    fetch('/api/subscription/status', { headers: { cookie } }),
+    apiFetch(event, '/api/tokens'),
+    apiFetch(event, '/api/subscription/status'),
   ]);
 
   const tokens: TokenRow[] = tokensRes.ok
