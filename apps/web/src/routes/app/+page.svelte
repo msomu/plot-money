@@ -1,5 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
+  import { MCP_CLIENTS } from '$lib/mcp-clients';
+  import { TOOL_CATEGORIES, TOTAL_TOOLS } from '$lib/tool-catalog';
 
   let { data } = $props();
 
@@ -12,6 +14,7 @@
   let errorMsg = $state<string | null>(null);
   let subscribing = $state(false);
   let subscribeError = $state<string | null>(null);
+  let snippetCopied = $state<string | null>(null);
 
   async function subscribe() {
     subscribing = true;
@@ -31,6 +34,7 @@
   }
 
   function openGenerate() {
+    if (!data.subscriptionActive) return;
     newName = '';
     generatedToken = null;
     errorMsg = null;
@@ -40,7 +44,6 @@
 
   function closeDialog() {
     dialog?.close();
-    // Fully clear the once-shown token so it can never be re-rendered.
     generatedToken = null;
     newName = '';
     errorMsg = null;
@@ -63,7 +66,7 @@
       }
       const body = (await res.json()) as { name: string; token: string };
       generatedToken = { name: body.name, token: body.token };
-      await invalidateAll(); // refresh the token list behind the dialog
+      await invalidateAll();
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Failed to generate token';
     } finally {
@@ -79,6 +82,16 @@
       setTimeout(() => (copyState = 'idle'), 1800);
     } catch {
       // Clipboard might be blocked — user can still select the textarea.
+    }
+  }
+
+  async function copySnippet(id: string, snippet: string) {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      snippetCopied = id;
+      setTimeout(() => (snippetCopied = null), 1500);
+    } catch {
+      // ignore
     }
   }
 
@@ -107,130 +120,167 @@
 </script>
 
 <svelte:head>
-  <title>plot.money — dashboard</title>
+  <title>plot.money — MCP setup</title>
 </svelte:head>
 
 <div class="mb-10">
-  <h1 class="text-2xl font-semibold tracking-tight">Welcome back, {data.session?.user.name}</h1>
-  <p class="mt-1 text-sm text-neutral-400">Manage your subscription and AI assistant tokens here.</p>
+  <h1 class="text-3xl font-semibold tracking-tight">MCP setup</h1>
+  <p class="mt-1 text-sm text-neutral-400">
+    Connect plot.money to your AI assistant in three steps.
+  </p>
 </div>
 
-<!-- Subscription -->
-<section class="mb-8 rounded-xl border border-white/10 bg-white/[0.02] p-6">
-  <div class="mb-4 flex items-start justify-between">
-    <div>
-      <h2 class="text-lg font-medium">Subscription</h2>
-      <p class="mt-1 text-sm text-neutral-400">₹299/month · GST-inclusive · Cancel anytime</p>
-    </div>
-    {#if data.subscriptionActive}
-      <span
-        class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300"
-      >
-        Active
-      </span>
-    {:else}
-      <span
-        class="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-300"
-      >
-        {data.subscriptionStatus ?? 'Not subscribed'}
-      </span>
-    {/if}
-  </div>
-
-  {#if !data.subscriptionActive}
+<!-- Subscription gate (if not subscribed, this dominates the page). -->
+{#if !data.subscriptionActive}
+  <section
+    class="mb-10 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-6"
+  >
+    <h2 class="text-lg font-medium">Subscribe to enable your token</h2>
+    <p class="mt-1 mb-4 text-sm text-neutral-400">
+      ₹299/month — placeholder activation in v0.1, real Razorpay billing later.
+    </p>
     <button
       onclick={subscribe}
       disabled={subscribing}
       class="rounded-lg bg-white px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 disabled:opacity-60"
     >
-      {subscribing ? 'Activating…' : 'Subscribe — ₹299/month'}
+      {subscribing ? 'Subscribing…' : 'Subscribe — instant activation'}
     </button>
-    <p class="mt-3 text-xs text-neutral-500">
-      v0.1: subscribes instantly without payment. Razorpay billing is wired in a later release.
-    </p>
     {#if subscribeError}
-      <p class="mt-2 text-xs text-red-400">{subscribeError}</p>
+      <p class="mt-3 text-xs text-red-400">{subscribeError}</p>
     {/if}
-  {/if}
-</section>
+  </section>
+{/if}
 
-<!-- MCP Tokens -->
-<section class="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-  <div class="mb-4 flex items-start justify-between">
-    <div>
-      <h2 class="text-lg font-medium">MCP tokens</h2>
-      <p class="mt-1 text-sm text-neutral-400">
-        One token per AI assistant. Keep them safe — they grant full access to your data.
-      </p>
+<!-- 1. Generate your token -->
+<section class="mb-10">
+  <h2 class="mb-4 text-lg font-medium">1. Generate your token</h2>
+
+  <button
+    onclick={openGenerate}
+    disabled={!data.subscriptionActive}
+    class="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] py-4 text-sm font-medium transition hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
+  >
+    <span aria-hidden="true">🔑</span>
+    Generate Token
+  </button>
+
+  <div class="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm">
+    <span aria-hidden="true" class="text-amber-300">ⓘ</span>
+    <span class="text-amber-200/90">
+      Keep your token safe — anyone with it can read and modify your money.
+    </span>
+  </div>
+
+  {#if data.tokens.length > 0}
+    <div class="mt-5 rounded-xl border border-white/10 bg-white/[0.02]">
+      <ul class="divide-y divide-white/5">
+        {#each data.tokens as token (token.id)}
+          <li class="flex items-center justify-between px-4 py-3">
+            <div>
+              <p class="text-sm font-medium">{token.name}</p>
+              <p class="text-xs text-neutral-500">
+                Created {fmtDate(token.created_at)} · last used {fmtDate(token.last_used_at)}
+              </p>
+            </div>
+            <button
+              onclick={() => revoke(token.id, token.name)}
+              disabled={revokingId === token.id}
+              class="text-sm text-red-400 transition hover:text-red-300 disabled:opacity-50"
+            >
+              {revokingId === token.id ? 'Revoking…' : 'Revoke'}
+            </button>
+          </li>
+        {/each}
+      </ul>
     </div>
-    <button
-      onclick={openGenerate}
-      disabled={!data.subscriptionActive}
-      class="rounded-lg bg-white px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 disabled:opacity-50"
-    >
-      Generate token
-    </button>
-  </div>
-
-  {#if !data.subscriptionActive}
-    <p class="rounded-lg border border-white/5 bg-black/20 px-4 py-3 text-sm text-neutral-500">
-      Subscribe first to generate tokens. Tokens are shown once at creation — copy them
-      immediately into your AI assistant's settings.
-    </p>
-  {:else if data.tokens.length === 0}
-    <p class="rounded-lg border border-white/5 bg-black/20 px-4 py-3 text-sm text-neutral-500">
-      No tokens yet. Generate one to connect Claude Desktop or ChatGPT.
-    </p>
-  {:else}
-    <ul class="divide-y divide-white/5">
-      {#each data.tokens as token (token.id)}
-        <li class="flex items-center justify-between py-3">
-          <div>
-            <p class="text-sm font-medium">{token.name}</p>
-            <p class="text-xs text-neutral-500">
-              Created {fmtDate(token.created_at)} · last used {fmtDate(token.last_used_at)}
-            </p>
-          </div>
-          <button
-            onclick={() => revoke(token.id, token.name)}
-            disabled={revokingId === token.id}
-            class="text-sm text-red-400 transition hover:text-red-300 disabled:opacity-50"
-          >
-            {revokingId === token.id ? 'Revoking…' : 'Revoke'}
-          </button>
-        </li>
-      {/each}
-    </ul>
   {/if}
 </section>
 
-<!-- Connect docs -->
-<section class="mt-8 rounded-xl border border-white/10 bg-gradient-to-br from-violet-500/5 to-pink-500/5 p-6">
-  <h2 class="text-lg font-medium">Connect to your AI assistant</h2>
-  <p class="mt-1 text-sm text-neutral-400">
-    Step-by-step setup for the most common MCP hosts:
-  </p>
-  <div class="mt-4 grid gap-3 md:grid-cols-2">
-    <a
-      href="https://github.com/msomu/plot-money/blob/main/docs/connect-claude-desktop.md"
-      target="_blank"
-      rel="noreferrer"
-      class="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-sm transition hover:border-white/20"
-    >
-      Claude Desktop →
-    </a>
-    <a
-      href="https://github.com/msomu/plot-money/blob/main/docs/connect-chatgpt.md"
-      target="_blank"
-      rel="noreferrer"
-      class="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-sm transition hover:border-white/20"
-    >
-      ChatGPT (custom connectors) →
-    </a>
+<!-- 2. Add to your MCP client -->
+<section class="mb-10">
+  <h2 class="mb-4 text-lg font-medium">2. Add to your MCP client</h2>
+  <div class="space-y-2">
+    {#each MCP_CLIENTS as client}
+      <details
+        class="group rounded-xl border border-white/10 bg-white/[0.02] open:bg-white/[0.04]"
+      >
+        <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium">
+          {client.name}
+          <span class="text-neutral-500 transition group-open:rotate-180">▾</span>
+        </summary>
+        <div class="px-4 pt-1 pb-4">
+          {#if client.pathHint}
+            <p class="mb-3 whitespace-pre-line text-xs text-neutral-400">{client.pathHint}</p>
+          {/if}
+          <div class="relative">
+            <pre
+              class="overflow-x-auto rounded-md border border-white/10 bg-black/40 p-4 text-xs leading-relaxed text-neutral-200">
+<code>{client.snippet}</code></pre>
+            <button
+              onclick={() => copySnippet(client.id, client.snippet)}
+              class="absolute top-2 right-2 rounded-md border border-white/10 bg-neutral-900/80 px-2 py-1 text-xs text-neutral-300 transition hover:bg-neutral-800"
+            >
+              {snippetCopied === client.id ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      </details>
+    {/each}
   </div>
 </section>
 
-<!-- Generate-token dialog. Uses the native <dialog> element + showModal(). -->
+<!-- 3. Capabilities -->
+<section class="mb-10">
+  <h2 class="mb-4 text-lg font-medium">3. Capabilities</h2>
+  <div class="grid gap-3 md:grid-cols-2">
+    {#each TOOL_CATEGORIES as cat}
+      <div
+        class="rounded-xl border bg-gradient-to-br p-5 {cat.accent}"
+      >
+        <div class="mb-3 text-2xl">{cat.emoji}</div>
+        <h3 class="text-sm font-semibold lowercase tracking-wide">{cat.name}</h3>
+        <p class="mt-1 text-xs text-neutral-400">{cat.blurb}</p>
+      </div>
+    {/each}
+  </div>
+</section>
+
+<!-- 4. Available tools -->
+<section class="mb-10">
+  <div class="mb-4 flex items-center justify-between">
+    <h2 class="text-lg font-medium">4. Available tools</h2>
+    <span class="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
+      {TOTAL_TOOLS} tools
+    </span>
+  </div>
+  <div class="space-y-2">
+    {#each TOOL_CATEGORIES as cat}
+      <details
+        class="group rounded-xl border border-white/10 bg-white/[0.02] open:bg-white/[0.04]"
+      >
+        <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3">
+          <span class="flex items-center gap-3">
+            <span class="text-base">{cat.emoji}</span>
+            <span class="text-sm font-medium">{cat.name}</span>
+            <span class="text-xs text-neutral-500">{cat.tools.length} tools</span>
+          </span>
+          <span class="text-neutral-500 transition group-open:rotate-180">▾</span>
+        </summary>
+        <ul class="divide-y divide-white/5 px-4 pb-2">
+          {#each cat.tools as tool}
+            <li class="py-2.5">
+              <p class="font-mono text-xs text-violet-300">{tool.name}</p>
+              <p class="mt-0.5 text-xs text-neutral-400">{tool.description}</p>
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {/each}
+  </div>
+</section>
+
+<!-- Generate-token dialog. Native <dialog> + showModal(). -->
 <dialog
   bind:this={dialog}
   class="m-auto w-full max-w-md rounded-xl border border-white/10 bg-neutral-900 p-6 text-neutral-100 backdrop:bg-black/60"
@@ -242,7 +292,7 @@
     </p>
 
     <form onsubmit={generate}>
-      <!-- svelte-ignore a11y_autofocus — this is the only field in a modal triggered by a click, so focus is expected -->
+      <!-- svelte-ignore a11y_autofocus — modal triggered by user click; focus is expected -->
       <input
         type="text"
         bind:value={newName}
@@ -275,8 +325,8 @@
   {:else}
     <h3 class="mb-2 text-lg font-medium">Token created</h3>
     <p class="mb-3 text-sm text-amber-300">
-      ⚠ This is the only time you'll see this token. Copy it now and paste into your AI
-      assistant's settings. If you lose it, generate a new one.
+      ⚠ This is the only time you'll see this token. Copy it now and paste into
+      your AI assistant's settings. If you lose it, generate a new one.
     </p>
 
     <label class="mb-1 block text-xs uppercase tracking-wider text-neutral-500" for="token-display">

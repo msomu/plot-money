@@ -99,10 +99,13 @@ bun run --filter @plot-money/web dev   # vite dev on :5173 (proxies to :3000)
 
 ## Connecting to your AI assistant
 
-After signing up at [app.plot.money](https://app.plot.money) and generating a token:
+Sign in at [plot.money](https://plot.money), subscribe, and the dashboard at `/app` walks you through:
 
-- **Claude Desktop:** see [`docs/connect-claude-desktop.md`](./docs/connect-claude-desktop.md)
-- **ChatGPT (custom connectors):** see [`docs/connect-chatgpt.md`](./docs/connect-chatgpt.md)
+1. Generating a token
+2. Copy-paste config snippets for Claude Desktop, Claude Code, Cursor, ChatGPT, Windsurf, VS Code, and Zed
+3. The full list of 13 tools and what each does
+
+The MCP endpoint is `https://plot.money/mcp` for every client.
 
 ## Self-hosting
 

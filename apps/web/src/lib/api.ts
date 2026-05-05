@@ -14,7 +14,11 @@ type LoadEvent = {
   request: Request;
 };
 
-export async function apiFetch(event: LoadEvent, path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(
+  event: LoadEvent,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
   const cookie = event.request.headers.get('cookie') ?? '';
   const headers = new Headers(init?.headers);
   if (cookie) headers.set('cookie', cookie);
