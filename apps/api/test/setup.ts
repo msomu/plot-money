@@ -33,6 +33,8 @@ export type TestEnv = {
     ALLOWED_ORIGINS: string;
     APP_SECRET: string;
     BETTER_AUTH_SECRET: string;
+    RAZORPAY_KEY_ID: string;
+    RAZORPAY_KEY_SECRET: string;
   };
   fixtures: {
     aliceToken: string;
@@ -44,6 +46,8 @@ export type TestEnv = {
 
 const APP_SECRET = 'test_secret_'.padEnd(64, 'x');
 const BETTER_AUTH_SECRET = 'better_auth_test_secret_'.padEnd(64, 'y');
+const RAZORPAY_KEY_ID = 'rzp_test_unit';
+const RAZORPAY_KEY_SECRET = 'razorpay_test_secret';
 
 const MIGRATION_PATH = `${import.meta.dir}/../../../packages/shared/migrations/0000_init.sql`;
 
@@ -61,6 +65,8 @@ export async function setupTestEnv(): Promise<TestEnv> {
       ALLOWED_ORIGINS: 'http://localhost:5173',
       APP_SECRET,
       BETTER_AUTH_SECRET,
+      RAZORPAY_KEY_ID,
+      RAZORPAY_KEY_SECRET,
     },
   });
 

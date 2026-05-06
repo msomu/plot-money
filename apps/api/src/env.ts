@@ -19,6 +19,9 @@ const EnvSchema = z.object({
 
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema> & { ALLOWED_ORIGINS_LIST: string[] };

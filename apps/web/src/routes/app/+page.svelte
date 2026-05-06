@@ -22,23 +22,104 @@
   let subscribeError = $state<string | null>(null);
   let snippetCopied = $state<string | null>(null);
 
+  type RazorpayCheckout = {
+    open: () => void;
+  };
+
+  type RazorpayResponse = {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  };
+
+  type RazorpayOptions = {
+    key: string;
+    amount: number;
+    currency: string;
+    name: string;
+    description: string;
+    order_id: string;
+    handler: (response: RazorpayResponse) => void | Promise<void>;
+    theme: { color: string };
+    modal: { ondismiss: () => void };
+  };
+
+  type RazorpayWindow = Window &
+    typeof globalThis & {
+      Razorpay?: new (options: RazorpayOptions) => RazorpayCheckout;
+    };
+
   function snippetWithToken(snippet: string): string {
     return liveToken ? snippet.replaceAll('YOUR_TOKEN_HERE', liveToken) : snippet;
+  }
+
+  async function loadRazorpay(): Promise<void> {
+    if ((window as RazorpayWindow).Razorpay) return;
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Unable to load Razorpay Checkout'));
+      document.head.appendChild(script);
+    });
   }
 
   async function subscribe() {
     subscribing = true;
     subscribeError = null;
     try {
-      const res = await fetch('/api/subscription/activate', { method: 'POST' });
+      const res = await fetch('/api/subscription/create-order', { method: 'POST' });
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
-      await invalidateAll();
+      const order = (await res.json()) as {
+        key_id: string;
+        order_id: string;
+        amount: number;
+        currency: string;
+        name: string;
+        description: string;
+      };
+      await loadRazorpay();
+      const Razorpay = (window as RazorpayWindow).Razorpay;
+      if (!Razorpay) throw new Error('Razorpay Checkout unavailable');
+
+      const checkout = new Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: order.name,
+        description: order.description,
+        order_id: order.order_id,
+        theme: { color: '#ffffff' },
+        modal: {
+          ondismiss: () => {
+            subscribing = false;
+          },
+        },
+        handler: async (response) => {
+          try {
+            const verifyRes = await fetch('/api/subscription/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(response),
+            });
+            if (!verifyRes.ok) {
+              const err = (await verifyRes.json()) as { error?: string };
+              throw new Error(err.error ?? `Failed (${verifyRes.status})`);
+            }
+            await invalidateAll();
+          } catch (err) {
+            subscribeError = err instanceof Error ? err.message : 'Failed to verify payment';
+          } finally {
+            subscribing = false;
+          }
+        },
+      });
+      checkout.open();
     } catch (err) {
       subscribeError = err instanceof Error ? err.message : 'Failed to subscribe';
-    } finally {
       subscribing = false;
     }
   }
@@ -158,14 +239,14 @@
   >
     <h2 class="text-lg font-medium">Subscribe to enable your token</h2>
     <p class="mt-1 mb-4 text-sm text-neutral-400">
-      ₹299/month — placeholder activation in v0.1, real Razorpay billing later.
+      ₹299/month — paid securely with Razorpay test checkout.
     </p>
     <button
       onclick={subscribe}
       disabled={subscribing}
       class="rounded-lg bg-white px-4 py-2 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 disabled:opacity-60"
     >
-      {subscribing ? 'Subscribing…' : 'Subscribe — instant activation'}
+      {subscribing ? 'Opening Razorpay…' : 'Subscribe with Razorpay'}
     </button>
     {#if subscribeError}
       <p class="mt-3 text-xs text-red-400">{subscribeError}</p>

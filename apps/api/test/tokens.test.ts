@@ -160,4 +160,69 @@ describe('subscription status', () => {
     expect(body.active).toBe(false);
     expect(body.status).toBeNull();
   });
+
+  test('verified Razorpay payment activates bob', async () => {
+    const orderId = 'order_test_bob';
+    const paymentId = 'pay_test_bob';
+    const signature = await hmacSha256Hex(
+      `${orderId}|${paymentId}`,
+      env.bindings.RAZORPAY_KEY_SECRET,
+    );
+
+    const res = await app.request(
+      '/api/subscription/verify',
+      {
+        method: 'POST',
+        headers: {
+          ...bearer(env.fixtures.bobToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          razorpay_order_id: orderId,
+          razorpay_payment_id: paymentId,
+          razorpay_signature: signature,
+        }),
+      },
+      env.bindings,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { active: boolean; status: string };
+    expect(body.active).toBe(true);
+    expect(body.status).toBe('active');
+  });
+
+  test('rejects invalid Razorpay signature', async () => {
+    const res = await app.request(
+      '/api/subscription/verify',
+      {
+        method: 'POST',
+        headers: {
+          ...bearer(env.fixtures.bobToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          razorpay_order_id: 'order_test_bad',
+          razorpay_payment_id: 'pay_test_bad',
+          razorpay_signature: 'bad',
+        }),
+      },
+      env.bindings,
+    );
+
+    expect(res.status).toBe(400);
+  });
 });
+
+async function hmacSha256Hex(message: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
